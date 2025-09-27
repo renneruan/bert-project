@@ -1,0 +1,71 @@
+Yes, you can easily generate graphs of your loss. The Hugging Face `Trainer` has built-in support for a powerful visualization tool called **TensorBoard**.
+
+Based on your script, you have a `logging_dir` set up, but the line to activate TensorBoard reporting is commented out.
+
+-----
+
+### \#\# ⚙️ How to Enable Loss Graphing
+
+You just need to make two small changes:
+
+#### 1\. Install TensorBoard
+
+If you don't already have it, install the `tensorboard` package in your Python environment.
+
+```bash
+pip install tensorboard
+```
+
+#### 2\. Modify Your `TrainingArguments`
+
+In your `train.py` script, find your `TrainingArguments` and uncomment the `report_to` line.
+
+```python
+# train.py
+
+# ... inside your run_training() function
+
+training_args = TrainingArguments(
+    # ... your other arguments
+    logging_dir=f"training-logs/{model_name}", # You already have this, which is great
+    report_to=["tensorboard"],               # <-- UNCOMMENT THIS LINE
+    # ...
+)
+```
+
+-----
+
+### \#\# 🚀 How to View the Graph
+
+After making the change, follow these steps:
+
+#### 1\. Rerun Your Training
+
+Start your training again using the `accelerate launch` command. The `Trainer` will now automatically create special log files in your `training-logs/Modern/4.6` directory that TensorBoard can read.
+
+#### 2\. Launch the TensorBoard Dashboard
+
+While your training is running (or after it has finished), open a **new terminal** on your cluster and run the following command:
+
+```bash
+tensorboard --logdir training-logs/Modern/4.6
+```
+
+This starts a web server. It will print a URL, usually `http://localhost:6006/`.
+
+#### 3\. View the Graph in Your Browser (with SSH Tunneling)
+
+Since the server is running on the remote cluster node, you can't open `localhost:6006` directly. You need to create an SSH tunnel to forward that port to your local computer.
+
+On your **local machine's terminal** (not the cluster one), run this command:
+
+```bash
+ssh -L 6006:localhost:6006 your_username@cluster_address
+```
+
+*(Replace `your_username@cluster_address` with your actual login details. Keep this terminal window open.)*
+
+Now, open your web browser on your local computer and go to:
+**http://localhost:6006/**
+
+You will see the TensorBoard dashboard, where you can view interactive graphs of your training loss, learning rate, and other metrics over time.

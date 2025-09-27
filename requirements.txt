@@ -1,0 +1,14 @@
+accelerate
+transformers
+tokenizers
+datasets
+nltk
+ftfy
+beautifulsoup4
+tqdm
+multiprocess
+matplotlib
+ninja
+ipykernel
+jupyter
+einops
