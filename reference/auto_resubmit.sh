@@ -32,10 +32,10 @@
 #SBATCH -J resubmit-test    # Job name
 #SBATCH -o %x-output.%j     # Name of stdout output file (%j expands to jobId)
 #SBATCH -N 1                # Total number of nodes requested
-#SBATCH -t 12:00:00         # Run time (hh:mm:ss)
-#SBATCH -p mi2508x          # Desired partition      
+#SBATCH -t 04:00:00         # Run time (hh:mm:ss)
+#SBATCH -p mi3008x          # Desired partition      
 
-MAX_ITERATIONS=4
+MAX_ITERATIONS=2
 
 # ------------------------------------------------------------
 # END USER-EDITABLE SECTION
@@ -55,7 +55,7 @@ if [ "$ITERATION" -eq 1 ]; then
 
     export LAST_JOB_ID="${CURRENT_JOB_ID}"
     echo "Submitting 2nd job."
-    NEXT_JOB_ID=$(sbatch --parsable --dependency=afternotok:${CURRENT_JOB_ID} auto_resubmit.sh)
+    NEXT_JOB_ID=$(sbatch --parsable --dependency=afternotok:${CURRENT_JOB_ID} $WORK/scripts/auto_resubmit.sh)
 
 # We're on the 2nd through N-1 iteration
 elif [[ "$ITERATION" -gt 1 && "$ITERATION" -lt "$MAX_ITERATIONS" ]]; then
@@ -68,7 +68,7 @@ elif [[ "$ITERATION" -gt 1 && "$ITERATION" -lt "$MAX_ITERATIONS" ]]; then
 
         export LAST_JOB_ID="${CURRENT_JOB_ID}"
         echo "Submitting next job."
-        NEXT_JOB_ID=$(sbatch --parsable --dependency=afternotok:${CURRENT_JOB_ID} auto_resubmit.sh)
+        NEXT_JOB_ID=$(sbatch --parsable --dependency=afternotok:${CURRENT_JOB_ID} $WORK/scripts/auto_resubmit.sh)
 
     else
 
@@ -111,8 +111,10 @@ fi
 # ---------------------------------------------------------
 
 # Activate the virtual environment
-source myenv/bin/activate
-python3 train.py
+module load rocm/6.4.1
+source $WORK/amd_300/bin/activate #
+rocm-smi
+accelerate launch --multi_gpu --num_processes=8 $WORK/scripts/train_entrypoint.py 
 
 # ---------------------------------------------------------
 # END USER-EDITABLE SECTION

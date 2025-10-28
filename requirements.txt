@@ -12,3 +12,6 @@ ninja
 ipykernel
 jupyter
 einops
+tensorboard
+evaluate
+seqeval
