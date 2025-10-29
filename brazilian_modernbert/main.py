@@ -50,6 +50,7 @@ def main():
         context_size=CONTEXT_SIZE,
         input_dataset=splitted_dataset,
     )
+    logger.info(tokenized_dataset)
 
 
 if __name__ == "__main__":

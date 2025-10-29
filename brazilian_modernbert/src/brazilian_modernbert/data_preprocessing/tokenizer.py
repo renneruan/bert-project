@@ -157,7 +157,7 @@ def evaluate_fertility(tokenizer, dataset):
     return evaluate_fertility
 
 
-def tokenize_dataset(
+def tokenize_dataset_with_padding(
     data_folder, tokenizer, vocabulary_size, context_size, input_dataset
 ):
     tokenizer.model_max_length = context_size
@@ -187,9 +187,76 @@ def tokenize_dataset(
 
     tokenized_datasets_name = os.path.join(
         data_folder,
-        f"tokenized-for-training/custom/vocab_size:{vocabulary_size:_}/context_size:{context_size}",
+        f"padded-tokenized-for-training/custom/vocab_size:{vocabulary_size:_}/context_size:{context_size}",
     )
     tokenized_datasets.save_to_disk(tokenized_datasets_name)
+
+    return tokenized_datasets
+
+
+def tokenize_dataset_with_sequence_packing(
+    data_folder, tokenizer, vocabulary_size, context_size, input_dataset
+):
+    tokenizer.model_max_length = context_size
+    logger.info(f"The tokenizer will keep only: {context_size} tokens")
+
+    def tokenize_function(examples):
+        return tokenizer(
+            examples["text"],
+            truncation=False,
+            padding=False,
+            return_special_tokens_mask=True,
+        )
+
+    logger.info("Tokenizing Dataset (Tokenizing all docs)")
+    tokenized_datasets = input_dataset.map(
+        tokenize_function,
+        batched=True,
+        remove_columns=["text"],  # Keep other columns for now
+        num_proc=cpu_count(),
+    )
+
+    def group_texts(examples):
+        # Concatenate all texts from the batch
+        # examples.keys() will include 'input_ids', 'attention_mask', etc.
+        concatenated_examples = {
+            k: sum(examples[k], []) for k in examples.keys()
+        }
+        total_length = len(concatenated_examples[list(examples.keys())[0]])
+
+        # We drop the small remainder.
+        if total_length >= context_size:
+            total_length = (total_length // context_size) * context_size
+
+        # Split by chunks of context_size
+        result = {
+            k: [
+                t[i : i + context_size]
+                for i in range(0, total_length, context_size)
+            ]
+            for k, t in concatenated_examples.items()
+        }
+
+        return result
+
+    logger.info("Grouping texts into packed sequences")
+    tokenized_datasets = tokenized_datasets.map(
+        group_texts,
+        batched=True,
+        num_proc=cpu_count(),
+    )
+
+    logger.info("Finished tokenizing and packing dataset")
+
+    tokenized_datasets_name = os.path.join(
+        data_folder,
+        f"packed-tokenized-for-training/custom/vocab_size:{vocabulary_size:_}/context_size:{context_size}",
+    )
+    tokenized_datasets.save_to_disk(tokenized_datasets_name)
+
+    for elem in tokenized_datasets["train"][:10]["input_ids"]:
+        logger.info(elem)
+        logger.info(tokenizer.decode(elem))
 
     return tokenized_datasets
 
