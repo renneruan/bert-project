@@ -11,7 +11,7 @@ def health_check():
     commands = [
         ["hostname"],
         ["rocm-smi"],
-        ["pip", "list"],
+        # ["pip", "list"],
     ]
 
     for command in commands:

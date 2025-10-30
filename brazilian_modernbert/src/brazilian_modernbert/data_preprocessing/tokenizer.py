@@ -13,7 +13,7 @@ from tokenizers.pre_tokenizers import (
     Digits,
 )
 from tokenizers.processors import TemplateProcessing
-from tokenizers.decoders import Metaspace
+from tokenizers.decoders import Metaspace as MetaspaceDecoder
 from tokenizers.models import Unigram
 from tokenizers.trainers import UnigramTrainer
 
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 CUSTOM_SPECIAL_TOKENS = ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"]
 
 
-class Tokenizer:
+class TokenizerHandler:
     def __init__(self, vocabulary_size, context_size, input_dataset):
 
         self.custom_special_tokens = CUSTOM_SPECIAL_TOKENS
@@ -83,7 +83,7 @@ class Tokenizer:
         custom_tokenizer.normalizer = self.custom_normalizer
         custom_tokenizer.pre_tokenizer = self.custom_pre_tokenizer
         custom_tokenizer.post_processor = self.custom_post_processor
-        custom_tokenizer.decoder = Metaspace()
+        custom_tokenizer.decoder = MetaspaceDecoder()
 
         self.custom_tokenizer = custom_tokenizer
 
@@ -296,24 +296,33 @@ def tokenize_dataset_with_sequence_packing(
     )
     tokenized_datasets.save_to_disk(tokenized_datasets_name)
 
-    for elem in tokenized_datasets["train"][:10]["input_ids"]:
+    for elem in tokenized_datasets["train"][:2]["input_ids"]:
         logger.info(elem)
         logger.info(tokenizer.decode(elem))
 
     return tokenized_datasets
 
 
-def create_and_train_tokenizer(vocabulary_size, context_size, input_dataset):
-    logger.info("Creating and configuring tokenizer")
-    tokenizer_handler = Tokenizer(vocabulary_size, context_size, input_dataset)
+def create_and_train_tokenizer(vocabulary_size, context_size, input_dataset, train_tokenizer=False):
+    tokenizer_path = f"tokenizers/custom/{vocabulary_size:_}"
 
-    logger.info("Training tokenizer with splitted dataset")
-    tokenizer_handler.train_tokenizer()
-    tokenizer_handler.update_to_fast_tokenizer()
+    if (not train_tokenizer) and os.path.isdir(tokenizer_path):
+        logger.info(f"Tokenizer already found at {tokenizer_path}. Loading from disk.")
+        tokenizer = PreTrainedTokenizerFast.from_pretrained(tokenizer_path)
+        return tokenizer
+    else:
+        logger.info(f"Starting new tokenizer training.")
+        logger.info("Creating and configuring tokenizer")
+        tokenizer_handler = TokenizerHandler(vocabulary_size, context_size, input_dataset)
 
-    logger.info("Saving trained tokenier")
-    tokenizer = tokenizer_handler.save_tokenizer()
+        logger.info("Training tokenizer with splitted dataset")
+        tokenizer_handler.train_tokenizer()
+        tokenizer_handler.update_to_fast_tokenizer()
 
-    analyze_token_distribution(input_dataset, tokenizer, threshold=1000)
+        logger.info("Saving trained tokenier")
+        tokenizer = tokenizer_handler.save_tokenizer()
 
-    return tokenizer
+        analyze_token_distribution(input_dataset, tokenizer, threshold=1000)
+
+
+        return tokenizer

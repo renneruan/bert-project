@@ -26,17 +26,18 @@ def run_training():
     accelerator.print(f"Working directory: {os.getcwd()}")
 
     vocabulary_size = 32_768
-    context_size = 512
+    context_size = 1024
     tokenizer_name = f"tokenizers/custom/{vocabulary_size:_}"
-    model_name = f"Modern/{4.6}"
+    model_name = f"Modern/{2.0}"
     output_dir = f"training_test/{model_name}"
 
     tokenized_datasets_name = os.path.join(
         DATA_FOLDER,
-        f"tokenized-for-training/custom/vocab_size:{vocabulary_size:_}/context_size:{context_size}",
+        f"packed-tokenized-for-training/custom/vocab_size:{vocabulary_size:_}/context_size:{context_size}",
     )
     tokenized_datasets = load_from_disk(tokenized_datasets_name)
     training_dataset = tokenized_datasets["train"]
+    # eval_dataset = tokenized_datasets["test"]
 
     tokenizer = AutoTokenizer.from_pretrained(
         tokenizer_name, local_files_only=True, cache_dir=CACHED_DATA_FOLDER
@@ -47,10 +48,13 @@ def run_training():
         reference_compile=False,
         attn_implementation="flash_attention_2",
         vocab_size=vocabulary_size,
-        max_position_embeddings=512,
+        max_position_embeddings=1024,
     )
     config.vocab_size = vocabulary_size
-    config.max_position_embeddings = 512
+    config.max_position_embeddings = 1024
+
+    config.global_rope_theta = 10000.0
+
     config.local_attention = 128
     config.pad_token_id = 0
     config.bos_token_id = 2
@@ -70,7 +74,7 @@ def run_training():
         output_dir=output_dir,
         overwrite_output_dir=False,
         max_steps=500_000,
-        per_device_train_batch_size=512,
+        per_device_train_batch_size=256,
         gradient_accumulation_steps=1,
         dataloader_num_workers=128,
         logging_strategy="steps",
