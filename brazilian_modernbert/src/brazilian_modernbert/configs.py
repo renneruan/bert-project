@@ -4,7 +4,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 LOAD_AND_PREPROCESS_DATASET = False
-TRAIN_TOKENIZER = True
+TRAIN_TOKENIZER = False
 
 WORK_DIR = os.getenv("WORK")
 DATA_FOLDER = os.path.join(WORK_DIR, "data")

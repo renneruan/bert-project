@@ -36,7 +36,7 @@ def load_brwac(cached_data_folder: str):
         split="train",
         num_proc=cpu_count(),
         cache_dir=cached_data_folder,
-        trust_remote_code=True,
+        # trust_remote_code=True,
     )
 
     brwac = brwac.remove_columns(
