@@ -157,6 +157,48 @@ def evaluate_fertility(tokenizer, dataset):
     return evaluate_fertility
 
 
+def analyze_token_distribution(dataset, tokenizer, threshold=1000):
+    logger.info(f"Checking for documents with > {threshold} tokens...")
+
+    def calc_length(batch):
+        # Tokenize without truncation/padding to get true length
+        encodings = tokenizer(
+            batch["text"],
+            truncation=False,
+            padding=False,
+            return_attention_mask=False,
+        )
+        return {"token_count": [len(ids) for ids in encodings["input_ids"]]}
+
+    # Calculate lengths efficiently
+    dataset_with_lengths = dataset.map(
+        calc_length,
+        batched=True,
+        num_proc=cpu_count(),
+        desc="Counting tokens",
+        remove_columns=[
+            "text"
+        ],  # Optimization: drop text to save RAM, we only need counts now
+    )
+
+    lengths = dataset_with_lengths["token_count"]
+    total_docs = len(lengths)
+    long_docs_count = sum(1 for l in lengths if l > threshold)
+    percentage = (long_docs_count / total_docs) * 100 if total_docs > 0 else 0
+
+    logger.info("=" * 40)
+    logger.info(f"TOKEN DISTRIBUTION ANALYSIS (Threshold: {threshold})")
+    logger.info(f"Total Documents: {total_docs}")
+    logger.info(f"Documents > {threshold} tokens: {long_docs_count}")
+    logger.info(f"Percentage: {percentage:.4f}%")
+    if total_docs > 0:
+        logger.info(f"Max Length: {max(lengths)}")
+        logger.info(f"Avg Length: {sum(lengths)/total_docs:.2f}")
+    logger.info("=" * 40)
+
+    return long_docs_count
+
+
 def tokenize_dataset_with_padding(
     data_folder, tokenizer, vocabulary_size, context_size, input_dataset
 ):
@@ -189,7 +231,7 @@ def tokenize_dataset_with_padding(
         data_folder,
         f"padded-tokenized-for-training/custom/vocab_size:{vocabulary_size:_}/context_size:{context_size}",
     )
-    tokenized_datasets.save_to_disk(tokenized_datasets_name)
+    # tokenized_datasets.save_to_disk(tokenized_datasets_name)
 
     return tokenized_datasets
 
@@ -271,5 +313,7 @@ def create_and_train_tokenizer(vocabulary_size, context_size, input_dataset):
 
     logger.info("Saving trained tokenier")
     tokenizer = tokenizer_handler.save_tokenizer()
+
+    analyze_token_distribution(input_dataset, tokenizer, threshold=1000)
 
     return tokenizer

@@ -22,7 +22,7 @@ from src.brazilian_modernbert.data_preprocessing.preprocess_datasets import (
 from src.brazilian_modernbert.data_preprocessing.tokenizer import (
     create_and_train_tokenizer,
     evaluate_fertility,
-    tokenize_dataset_with_sequence_packing,
+    tokenize_dataset_with_padding,
 )
 
 setup_logging()
@@ -43,7 +43,7 @@ def main():
 
     evaluate_fertility(tokenizer, splitted_dataset)
 
-    tokenized_dataset = tokenize_dataset_with_sequence_packing(
+    tokenized_dataset = tokenize_dataset_with_padding(
         data_folder=DATA_FOLDER,
         tokenizer=tokenizer,
         vocabulary_size=VOCABULARY_SIZE,

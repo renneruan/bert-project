@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 def clean_for_first_phase(dataset):
     cleaned_dataset = dataset.filter(
         lambda example: example["num_words"] >= 20
-        and example["num_words"] <= 512
+        and example["num_words"] <= 8192
         and example["stopwords"] >= 1
         and example["average"] >= 2
         and example["average"] <= 15
