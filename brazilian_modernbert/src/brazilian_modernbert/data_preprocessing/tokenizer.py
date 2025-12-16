@@ -2,6 +2,7 @@ import os
 import logging
 from datasets import load_from_disk
 
+import numpy as np
 from transformers import PreTrainedTokenizerFast
 from tokenizers.normalizers import NFC, Lowercase, Replace
 from tokenizers import normalizers, pre_tokenizers, Tokenizer
@@ -127,37 +128,87 @@ class TokenizerHandler:
 
 
 def evaluate_fertility(tokenizer, dataset):
-    def normalize_and_pre_tokenize(text):
-        normalized = tokenizer.backend_tokenizer.normalizer.normalize_str(text)
-        processed = tokenizer.backend_tokenizer.pre_tokenizer.pre_tokenize_str(
-            normalized
+    logger.info("Calculating Tokenizer Fertility...")
+
+    def calculate_per_doc(batch):
+        encodings = tokenizer(
+            batch["text"],
+            add_special_tokens=False,
+            truncation=False,
+            padding=False,
         )
-        return processed
+        generated_counts = [len(ids) for ids in encodings["input_ids"]]
 
-    def count_tokens(batch):
-        original_tokens = 0
-        generated_tokens = 0
+        original_counts = []
+        backend = tokenizer.backend_tokenizer
 
-        for doc in batch["text"]:
+        for text in batch["text"]:
+            normalized = backend.normalizer.normalize_str(text)
+            pre_tokenized = backend.pre_tokenizer.pre_tokenize_str(normalized)
+            original_counts.append(len(pre_tokenized))
 
-            original_tokens += len(normalize_and_pre_tokenize(doc))
-            generated_tokens += len(tokenizer.encode(doc))
+        ratios = [
+            gen / orig if orig > 0 else 0
+            for gen, orig in zip(generated_counts, original_counts)
+        ]
 
-        # Add the token counts as a new column to the batch
-        return {"generated": [generated_tokens], "original": [original_tokens]}
+        return {
+            "n_subwords": generated_counts,
+            "n_words": original_counts,
+            "fertility": ratios,
+        }
 
-    evaluate_fertility = dataset["train"].map(
-        count_tokens,
+    dataset_with_fertility = dataset["train"].map(
+        calculate_per_doc,
         batched=True,
+        batch_size=50000,
+        num_proc=16,
         remove_columns=["text"],
-        num_proc=cpu_count(),
+        desc="Calculating Fertility",
     )
 
-    logger.info("Tokenizer Fertility: %s", evaluate_fertility)
-    return evaluate_fertility
+    logger.info("Aggregating statistics iteratively to save RAM...")
+
+    total_fertility = 0
+    max_fertility = 0
+    count = len(dataset_with_fertility)
+
+    for i in range(0, count, 100_000):
+        chunk = dataset_with_fertility[i : i + 100_000]["fertility"]
+
+        chunk_max = max(chunk)
+        if chunk_max > max_fertility:
+            max_fertility = chunk_max
+
+        total_fertility += sum(chunk)
+
+    avg_fertility = total_fertility / count
+
+    logger.info(f"Fertility Report")
+    logger.info(f"Average Fertility: {avg_fertility:.4f}")
+    logger.info(f"Max Fertility:     {max_fertility:.4f}")
+
+    return dataset_with_fertility
 
 
-def analyze_token_distribution(dataset, tokenizer, threshold=1000):
+def analyze_token_distribution(
+    dataset, tokenizer, threshold=1000, sample_ratio=0.01
+):
+    logger.info(f"Checking for documents with > {threshold} tokens...")
+
+    total_rows = len(dataset)
+
+    if 0 < sample_ratio < 1.0:
+        step = int(1 / sample_ratio)
+        indices = range(0, total_rows, step)
+        sampled_dataset = dataset.select(indices)
+        logger.info(
+            f"Downsampling for analysis: Selected {len(sampled_dataset)} samples ({sample_ratio*100}%) from {total_rows} total."
+        )
+    else:
+        sampled_dataset = dataset
+        logger.info(f"Analyzing full dataset ({total_rows} samples).")
+
     logger.info(f"Checking for documents with > {threshold} tokens...")
 
     def calc_length(batch):
@@ -170,31 +221,31 @@ def analyze_token_distribution(dataset, tokenizer, threshold=1000):
         )
         return {"token_count": [len(ids) for ids in encodings["input_ids"]]}
 
-    # Calculate lengths efficiently
-    dataset_with_lengths = dataset.map(
+    dataset_with_lengths = sampled_dataset.map(
         calc_length,
         batched=True,
-        num_proc=cpu_count(),
+        num_proc=16,
         desc="Counting tokens",
-        remove_columns=[
-            "text"
-        ],  # Optimization: drop text to save RAM, we only need counts now
+        remove_columns=["text"],
     )
 
     lengths = dataset_with_lengths["token_count"]
     total_docs = len(lengths)
+    total_tokens = sum(lengths)
     long_docs_count = sum(1 for l in lengths if l > threshold)
     percentage = (long_docs_count / total_docs) * 100 if total_docs > 0 else 0
 
-    logger.info("=" * 40)
-    logger.info(f"TOKEN DISTRIBUTION ANALYSIS (Threshold: {threshold})")
+    logger.info(f"Token distribution analysis (Threshold: {threshold})")
     logger.info(f"Total Documents: {total_docs}")
+
+    logger.info(f"Total Tokens: {total_tokens:_}")
+    logger.info(f"Tokens (Billions): {total_tokens / 1_000_000_000:.4f} B")
+
     logger.info(f"Documents > {threshold} tokens: {long_docs_count}")
     logger.info(f"Percentage: {percentage:.4f}%")
     if total_docs > 0:
         logger.info(f"Max Length: {max(lengths)}")
         logger.info(f"Avg Length: {sum(lengths)/total_docs:.2f}")
-    logger.info("=" * 40)
 
     return long_docs_count
 
@@ -206,12 +257,19 @@ def tokenize_dataset_with_padding(
 
     logger.info(f"The tokenizer will keep only: {context_size} tokens")
 
+    total_size = len(input_dataset)
+    # subset_size = int(total_size * 0.05)
+
+    # logger.info(f"Downsampling: Using 5% of dataset ({subset_size} out of {total_size} samples)")
+
+    # input_dataset = input_dataset.select(range(subset_size))
+
     def group_texts(examples):
         tokenized_inputs = tokenizer(
             examples["text"],
             max_length=context_size,
             truncation=True,
-            padding="max_length",
+            padding=False,
             return_special_tokens_mask=True,
         )
         return tokenized_inputs
@@ -221,8 +279,9 @@ def tokenize_dataset_with_padding(
     tokenized_datasets = input_dataset.map(
         group_texts,
         batched=True,
+        batch_size=50_000,
         remove_columns=["text"],
-        num_proc=cpu_count(),
+        num_proc=16,
     )
 
     logger.info("Finished tokenizing dataset")
@@ -231,89 +290,26 @@ def tokenize_dataset_with_padding(
         data_folder,
         f"padded-tokenized-for-training/custom/vocab_size:{vocabulary_size:_}/context_size:{context_size}",
     )
-    # tokenized_datasets.save_to_disk(tokenized_datasets_name)
-
-    return tokenized_datasets
-
-
-def tokenize_dataset_with_sequence_packing(
-    data_folder, tokenizer, vocabulary_size, context_size, input_dataset
-):
-    tokenizer.model_max_length = context_size
-    logger.info(f"The tokenizer will keep only: {context_size} tokens")
-
-    def tokenize_function(examples):
-        return tokenizer(
-            examples["text"],
-            truncation=False,
-            padding=False,
-            return_special_tokens_mask=True,
-        )
-
-    logger.info("Tokenizing Dataset (Tokenizing all docs)")
-    tokenized_datasets = input_dataset.map(
-        tokenize_function,
-        batched=True,
-        remove_columns=["text"],  # Keep other columns for now
-        num_proc=cpu_count(),
-    )
-
-    def group_texts(examples):
-        # Concatenate all texts from the batch
-        # examples.keys() will include 'input_ids', 'attention_mask', etc.
-        concatenated_examples = {
-            k: sum(examples[k], []) for k in examples.keys()
-        }
-        total_length = len(concatenated_examples[list(examples.keys())[0]])
-
-        # We drop the small remainder.
-        if total_length >= context_size:
-            total_length = (total_length // context_size) * context_size
-
-        # Split by chunks of context_size
-        result = {
-            k: [
-                t[i : i + context_size]
-                for i in range(0, total_length, context_size)
-            ]
-            for k, t in concatenated_examples.items()
-        }
-
-        return result
-
-    logger.info("Grouping texts into packed sequences")
-    tokenized_datasets = tokenized_datasets.map(
-        group_texts,
-        batched=True,
-        num_proc=cpu_count(),
-    )
-
-    logger.info("Finished tokenizing and packing dataset")
-
-    tokenized_datasets_name = os.path.join(
-        data_folder,
-        f"packed-tokenized-for-training/custom/vocab_size:{vocabulary_size:_}/context_size:{context_size}",
-    )
     tokenized_datasets.save_to_disk(tokenized_datasets_name)
 
-    for elem in tokenized_datasets["train"][:2]["input_ids"]:
-        logger.info(elem)
-        logger.info(tokenizer.decode(elem))
-
     return tokenized_datasets
 
 
-def create_and_train_tokenizer(vocabulary_size, context_size, input_dataset, train_tokenizer=False):
+def create_and_train_tokenizer(
+    vocabulary_size, context_size, input_dataset, train_tokenizer=False
+):
     tokenizer_path = f"tokenizers/custom/{vocabulary_size:_}"
 
     if (not train_tokenizer) and os.path.isdir(tokenizer_path):
-        logger.info(f"Tokenizer already found at {tokenizer_path}. Loading from disk.")
+        logger.info(
+            f"Tokenizer already found at {tokenizer_path}. Loading from disk."
+        )
         tokenizer = PreTrainedTokenizerFast.from_pretrained(tokenizer_path)
-        return tokenizer
     else:
         logger.info(f"Starting new tokenizer training.")
-        logger.info("Creating and configuring tokenizer")
-        tokenizer_handler = TokenizerHandler(vocabulary_size, context_size, input_dataset)
+        tokenizer_handler = TokenizerHandler(
+            vocabulary_size, context_size, input_dataset
+        )
 
         logger.info("Training tokenizer with splitted dataset")
         tokenizer_handler.train_tokenizer()
@@ -322,7 +318,6 @@ def create_and_train_tokenizer(vocabulary_size, context_size, input_dataset, tra
         logger.info("Saving trained tokenier")
         tokenizer = tokenizer_handler.save_tokenizer()
 
-        analyze_token_distribution(input_dataset, tokenizer, threshold=1000)
+    # analyze_token_distribution(input_dataset["train"], tokenizer, threshold=512)
 
-
-        return tokenizer
+    return tokenizer

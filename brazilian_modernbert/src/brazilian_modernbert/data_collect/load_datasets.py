@@ -21,11 +21,6 @@ def load_wikipedia_pages(cached_data_folder: str):
         cache_dir=cached_data_folder,
     )
 
-    # Mantemos apenas coluna de Texto
-    wikipedia = wikipedia.remove_columns(
-        [col for col in wikipedia.column_names if col != "text"]
-    )
-
     return wikipedia
 
 
@@ -39,10 +34,6 @@ def load_brwac(cached_data_folder: str):
         # trust_remote_code=True,
     )
 
-    brwac = brwac.remove_columns(
-        [col for col in brwac.column_names if col != "text"]
-    )
-
     cleaned_brwac = brwac.map(
         paragraph_to_document,
         batched=True,
@@ -52,15 +43,31 @@ def load_brwac(cached_data_folder: str):
 
     return cleaned_brwac
 
+def load_ccpt(cached_data_folder: str):
+    ccpt = load_dataset(
+        "ClassiCC-Corpus/ClassiCC-PT",
+        split="train",
+        num_proc=4,
+        cache_dir=cached_data_folder
+    )
+
+    return ccpt
+
 
 def load_all_datasets(cached_data_folder: str):
     logger.info("Loading all datasets")
 
-    wikipedia = load_wikipedia_pages(cached_data_folder)
-    brwac = load_brwac(cached_data_folder)
+    # wikipedia = load_wikipedia_pages(cached_data_folder)
+    # brwac = load_brwac(cached_data_folder)
+    ccpt = load_ccpt(cached_data_folder)
 
-    raw_datasets = concatenate_datasets([wikipedia, brwac])
+    # wikipedia = wikipedia.select_columns(["text"])
+    # brwac = brwac.select_columns(["text"])
+    ccpt = ccpt.select_columns(["text"])
 
+    # raw_datasets = concatenate_datasets([wikipedia, brwac])
+    raw_datasets = ccpt
+    
     logger.info("Finished loading all datasets")
 
     return raw_datasets
