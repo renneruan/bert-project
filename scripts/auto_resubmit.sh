@@ -32,10 +32,10 @@
 #SBATCH -J resubmit-test    # Job name
 #SBATCH -o %x-output.%j     # Name of stdout output file (%j expands to jobId)
 #SBATCH -N 1                # Total number of nodes requested
-#SBATCH -t 04:00:00         # Run time (hh:mm:ss)
+#SBATCH -t 12:00:00         # Run time (hh:mm:ss)
 #SBATCH -p mi3008x          # Desired partition      
 
-MAX_ITERATIONS=2
+MAX_ITERATIONS=3
 
 # ------------------------------------------------------------
 # END USER-EDITABLE SECTION
