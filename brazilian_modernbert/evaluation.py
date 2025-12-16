@@ -23,6 +23,7 @@ from transformers import (
     TrainingArguments,
     pipeline,
     get_wsd_schedule,
+    set_seed,
 )
 from torch.optim import AdamW
 
@@ -62,6 +63,8 @@ def setup_environment():
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     # Disable tokenizers parallelism to avoid deadlocks in dataloaders
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+    set_seed(Config.SEED)
 
     print(f"Working Directory: {Config.WORK_DIR}")
 

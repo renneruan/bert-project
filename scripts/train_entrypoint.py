@@ -9,6 +9,8 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+from transformers.trainer_utils import get_last_checkpoint
+
 from accelerate import Accelerator
 
 
@@ -28,15 +30,17 @@ def run_training():
     vocabulary_size = 32_768
     context_size = 1024
     tokenizer_name = f"tokenizers/custom/{vocabulary_size:_}"
-    model_name = f"Modern/{2.0}"
+    model_name = f"Modern/classiccc-1024-unigram-32768-900ksteps"
+
     output_dir = f"training_test/{model_name}"
+    os.makedirs(output_dir, exist_ok=True)
 
     tokenized_datasets_name = os.path.join(
         DATA_FOLDER,
-        f"packed-tokenized-for-training/custom/vocab_size:{vocabulary_size:_}/context_size:{context_size}",
+        f"padded-tokenized-for-training/custom/vocab_size:{vocabulary_size:_}/context_size:{context_size}",
     )
     tokenized_datasets = load_from_disk(tokenized_datasets_name)
-    training_dataset = tokenized_datasets["train"]
+    training_dataset = tokenized_datasets
     # eval_dataset = tokenized_datasets["test"]
 
     tokenizer = AutoTokenizer.from_pretrained(
@@ -73,7 +77,7 @@ def run_training():
     training_args = TrainingArguments(
         output_dir=output_dir,
         overwrite_output_dir=False,
-        max_steps=500_000,
+        max_steps=900_000,
         per_device_train_batch_size=256,
         gradient_accumulation_steps=1,
         dataloader_num_workers=128,
@@ -95,7 +99,16 @@ def run_training():
     )
 
     accelerator.print("Starting training on all available GPUs...")
-    trainer.train(resume_from_checkpoint=True)
+    last_checkpoint = None
+    if os.path.isdir(output_dir):
+        last_checkpoint = get_last_checkpoint(output_dir)
+
+    if last_checkpoint is not None:
+        accelerator.print(f"Resuming from checkpoint: {last_checkpoint}")
+        trainer.train(resume_from_checkpoint=last_checkpoint)
+    else:
+        accelerator.print("No checkpoint found. Starting from scratch.")
+        trainer.train()
     accelerator.print("Training complete!")
 
 
